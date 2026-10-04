@@ -9,19 +9,34 @@ read -rp "Please enter local port: " local_port
 read -rp "Please enter remote port: " remote_port
 
 #############################
-#Обработка значений
-if [[ ! "$vps_port_ssh" =~ ^[0-9]+$ ]] || (( vps_port_ssh < 1  || vps_port_ssh > 65535)) || [[ ! "$vps_addr" =~ $verification_ipv4 ]]; then 
-        printf "Invalid ipv4 address or port value"
+if (( $EUID != 0 )); then
+        echo "Run as root."
         exit 1
 fi
 
-#Взаимодействие с пользаком
 if [ -z "$vps_addr" ] || [ -z "$vps_port_ssh" ]; then
         printf "When launching the script, you need to enter the VPS address and port. Try --help.
 example: ./tunnel.sh 192.168.200.1 22."
         exit 1
 else
-        printf "User input:\n\tPort: %s\n\tAddress: %s\n\tLocal port: %s\n\tRemote port: %s" "$vps_port_ssh" "$vps_addr" "$local_port" "$remote_port"    
+        if [[ ! "$vps_addr" =~ "$verification_ipv4" ]]; then
+                printf "Invalid IPv4 address: %s\n" "$vps_addr" 
+                exit 1
+        fi
+
+        for port in "$vps_port_ssh" "$local_port" "$remote_port"; do
+                if [[ ! "$port" =~ "^[0-9]{1,5}$" ]]; then
+                        printf "Invalid port: %s\n" "$port"
+                        exit 1
+                fi
+
+                if (( $port < 1 || $port > 65535)); then
+                        printf "Port must be between 1 and 65535: %s\n" "$port"
+                        exit 1
+                fi
+        done
+        
+        printf "User input:\n\tPort: %s\n\tAddress: %s\n\tLocal port: %s\n\tRemote port: %s\n" "$vps_port_ssh" "$vps_addr" "$local_port" "$remote_port"
         read -p "That’s correct? (y or n (default y)):  " 
         if [[ -n "$REPLY" && "$REPLY" != "y" ]]; then
                 printf 'Please try again\n'
@@ -33,17 +48,12 @@ if ! ping -c 5 $vps_addr > /dev/null 2>&1; then
         echo "The host is not available."
         exit 1
 fi
-
-if (( EUID != 0 )); then
-        echo -e "The script requires root access to run.\nTry sudo ./tunnel.sh"
-        exit 1
-fi
-############################
+#############################
 
 read -rp "Enter the username for connecting to the VPS: " vps_user
 echo "Save fingerprint!!!!"
 
-install -d -m 700 /etc/reverse-tunnel
+install -d -m 700 /etc/reverse-tunnel || exit 1 
 ssh -p $vps_port_ssh \
         -o UserKnownHostsFile=/etc/reverse-tunnel/known_hosts \
         -o StrictHostKeyChecking=ask \
@@ -53,7 +63,7 @@ ssh -p $vps_port_ssh \
  
 
 IFS= read -r -s -p 'Password SSH for vps: ' vps_password
-printf '\n'
+printf '\n\n'
 
 if [[ -z "$vps_password" ]]; then
     printf 'The password is empty.\n' >&2
@@ -63,7 +73,7 @@ fi
 (
     umask 077
     printf '%s\n' "$vps_password" > /etc/reverse-tunnel/password
-)
+) || exit 1
 unset vps_password
 chmod 600 /etc/reverse-tunnel/password
 
