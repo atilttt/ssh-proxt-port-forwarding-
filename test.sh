@@ -38,7 +38,7 @@ if (( EUID != 0 )); then
         echo -e "The script requires root access to run.\nTry sudo ./tunnel.sh"
         exit 1
 fi
-#############################
+############################
 
 read -rp "Enter the username for connecting to the VPS: " vps_user
 echo "Save fingerprint!!!!"
